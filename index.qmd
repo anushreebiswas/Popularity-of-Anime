@@ -1,0 +1,780 @@
+---
+title: "Popularity of Anime"
+subtitle: "INFO 526 - Fall 2024 - Project 01"
+author: 
+  - name: "Data Wizards"
+    affiliations:
+      - name: "School of Information, University of Arizona"
+description: "Project description"
+format:
+   html:
+    code-tools: true
+    code-overflow: wrap
+    embed-resources: true
+editor: visual
+execute:
+  warning: false
+  echo: false
+---
+
+## Abstract
+
+This project utilizes MyAnimeList.net data to explore the popularity of anime, analyzing the influence of airing status, format, and audience engagement metrics on anime reception over time. Employing advanced data visualization and statistical methods in R, we uncover trends that highlight the evolving dynamics of anime consumption. Our analysis offers insights into the driving factors of anime popularity, beneficial for industry stakeholders and fans alike.
+
+# Introduction
+
+This dataset comes from [Tam Nguyen](https://github.com/tamdrashtri) and [MyAnimeList.net via Kaggle](https://www.kaggle.com/aludosan/myanimelist-anime-dataset-as-20190204). [According to Wikipedia](https://en.wikipedia.org/wiki/MyAnimeList) - "MyAnimeList, often abbreviated as MAL, is an anime and manga social networking and social cataloging application website. The site provides its users with a list-like system to organize and score anime and manga. It facilitates finding users who share similar tastes and provides a large database on anime and manga. The site claims to have 4.4 million anime and 775,000 manga entries. In 2015, the site received 120 million visitors a month."
+
+```{r Q1 Packages}
+#| results: hide
+#| message: FALSE
+# List of required packages
+packages <- c("GGally", "RColorBrewer", "ggcorrplot", "treemap",
+              "dplyr", "ggplot2", "lubridate", "forecast", "zoo", 
+              "cluster", "ggfortify", "tidyr", "survival", "ggsurvfit", 
+              "ggpubr", "stringr", "survminer", "purrr")
+
+# Function to check and install missing packages
+install_if_missing <- function(pkg) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg, dependencies = TRUE)
+    library(pkg, character.only = TRUE)
+  }
+}
+
+# Loop through each package and install if missing
+lapply(packages, install_if_missing)
+
+```
+
+```{r Libraries}
+#| results: hide
+#| message: FALSE
+library(ggplot2)
+library(readxl)
+library(dplyr)
+library(tidyverse)
+library(knitr)
+library(GGally)
+library(ggcorrplot)
+library(RColorBrewer)
+library(treemap)
+library(knitr)
+library(gridExtra)
+library(scales)
+library(ggwordcloud)
+library(ggrepel)
+library(lubridate)  
+library(forecast) 
+library(ggfortify)
+library(survival)
+library(survminer)
+```
+
+**Data Dictionary**
+
+```{r Data Dictionary}
+
+# Create vectors for the variable names, classes, and descriptions
+variables <- c("animeID", "name", "title_english", "title_japanese", "title_synonyms", 
+               "type", "source", "producers", "genre", "studio", "episodes", 
+               "status", "airing", "start_date", "end_date", "duration", "rating", 
+               "score", "scored_by", "rank", "popularity", "members", "favorites", 
+               "synopsis", "background", "premiered", "broadcast", "related")
+
+classes <- c("double", "character", "character", "character", "character", 
+  "character", "character", "character", "character", "character", 
+  "double", "character", "logical", "double", "double", "character", 
+  "character", "double", "double", "double", "double", "double", 
+  "double", "character", "character", "character", "character", "character")
+
+descriptions <- c("Anime ID (as in https://myanimelist.net/anime/animeID)", 
+                  "Anime title - extracted from the site.", 
+                  "Title in English (sometimes is different, sometimes is missing)", 
+                  "Title in Japanese (if Anime is Chinese or Korean, the title, if available, in the respective language)", 
+                  "Other variants of the title", 
+                  "Anime type (e.g. TV, Movie, OVA)", 
+                  "Source of anime (i.e original, manga, game, music, visual novel etc.)", 
+                  "Producers", "Genre", "Studio", "Number of episodes", 
+                  "Aired or not aired", "True/False is still airing", 
+                  "Start date (ymd)", "End date (ymd)", 
+                  "Per episode duration or entire duration, text string", 
+                  "Age rating", "Score (higher = better)", 
+                  "Number of users that scored", "Rank - weight according to MyAnimeList formula", 
+                  "Based on how many members/users have the respective anime in their list", 
+                  "Number of members that added this anime in their list", 
+                  "Number of members that favorites these in their list", 
+                  "Long string with anime synopsis", 
+                  "Long string with production background and other things", 
+                  "Anime premiered on season/year", 
+                  "When is (regularly) broadcasted", 
+                  "Dictionary: related animes, series, games etc.")
+
+# Create the data dictionary dataframe
+data_dictionary <- data.frame(
+  variable = variables,
+  class = classes,
+  description = descriptions,
+  stringsAsFactors = FALSE
+)
+knitr::include_graphics("images/dataset.png")
+
+# Print the data dictionary
+# print(data_dictionary)
+
+```
+
+Before pre-processing, the dataset contained 77,911 rows and 28 columns. The data was then cleaned and prepared through several steps, including examining unique values, calculating summary statistics, handling missing values, and other essential pre-processing tasks. After completing these processes, the dataset was reduced to 2,366 rows and expanded to 33 columns. Imputation was done to fill NA values, ensuring the dataset was complete and suitable for analysis. These steps were crucial for refining the data and making it ready for addressing the research questions.
+
+**Original Dataset**
+
+```{r Original Dataset}
+#Original Datset
+tidy_anime <- readr::read_csv("data/tidy_anime.csv")
+# head(tidy_anime,5)
+cat("The dimension of the original dataset is", dim(tidy_anime), "\n")
+```
+
+**Pre-processed Dataset**
+
+```{r Pre-processed Dataset}
+df4 <- readr::read_csv("data/anime_cleaned_data.csv")
+# head(df4,5)
+cat("The dimension of the pre-processed dataset is", dim(df4), "\n")
+```
+
+# Question 1: How do user engagement metrics (such as popularity, members, and favorites) and the number of users who scored an anime influence its overall score and rank?
+
+## Introduction
+
+Understanding how user engagement metrics influence an anime's score and rank is essential for identifying the factors that contribute to its success. In this analysis, we focus on metrics such as **popularity**, **members**, **favorites**, and the number of users who **scored** an anime (represented by the variable **scored_by**) to determine their impact on overall **score** and **rank**. These metrics reflect the level of audience interaction with an anime and offer valuable insights into its reception. Analyzing these variables allows us to explore how user preferences drive the perceived quality and ranking of anime titles on platforms like MyAnimeList. This question is particularly interesting because it highlights the relationship between user behavior and the success of anime, providing a deeper understanding of what makes an anime popular and highly ranked.
+
+## Approach
+
+To answer this question, I used a variety of visualization techniques and statistical models. First, I created a **correlogram** that combined scatter plots and density curves to visualize the **univariate** and **bivariate distributions** of key variables such as **score**, **rank**, **popularity**, **members**, **favorites**, and **scored_by**. Since the variables **scored_by**, **members**, and **favorites** were highly skewed, I applied a **log transformation** to normalize their distribution. This transformation helped in making meaningful comparisons across these metrics. Next, I generated a **heatmap** to highlight the **correlations** among the variables, providing an overview of their interrelationships.
+
+To further quantify the relationships between the variables, I performed **multiple linear regression** to predict **rank** using all other variables. I then plotted the **standardized coefficients**, which indicated the relative influence of each predictor on anime rank. This helped to clearly see which factors had the greatest effect on rank. Additionally, I created a **treemap** to visualize the top 20 anime based on their **score** and **popularity**. This treemap provided a visual summary of how audience engagement translates into highly rated and popular anime, making it easier to identify standout titles.
+
+## Analysis
+
+**Scatterplot**
+
+```{r Q1-scatterplot}
+
+# Subset of dataframe df4 with the variables of interest
+df_subset <- df4[, c("rank", "log_scored_by", "score", "popularity", "log_members", "log_favorites")]
+
+ggpairs(df_subset,
+        upper = list(continuous = wrap("smooth", color = "darkgreen", size = 0.1, alpha = 0.5)),
+        diag = list(continuous = wrap("densityDiag", fill = "lightgray")),
+        lower = list(continuous = wrap("cor", size = 3))) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.text.y = element_text(size = 6, hjust = 1),
+        axis.text.x = element_text(size = 6, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+        plot.margin = margin(10, 20, 10, 10),
+        strip.text.x = element_text(size = 8),
+        strip.text.y = element_text(size = 6)) +labs(title = "Scatterplot Matrix of Selected Variables")
+
+
+```
+
+**Heatmap**
+
+```{r Q1 Heatmap}
+
+corr_matrix <- cor(df4[, c("rank", "log_scored_by", "score", "popularity", "log_members", "log_favorites")], use = "complete.obs")
+
+ggcorrplot(corr_matrix, 
+           method = "square",
+           type = "lower",
+           lab = TRUE,
+           lab_size = 3,
+           colors = c("red", "white", "blue"),
+           title = "Correlation Matrix of Selected Variables",
+           ggtheme = theme_minimal() + 
+             theme(panel.grid = element_blank(),
+                   plot.title = element_text(size = 14, face = "bold", hjust = 0.5)))
+
+```
+
+**Multiple Linear Regression**
+
+```{r Q1-Multiple Linear Regression}
+# Step 1: Create the square root of score
+df4$score_squareroot <- sqrt(df4$score)
+
+# Step 2: Standardize the predictors and the dependent variable (rank)
+df_standardized <- as.data.frame(scale(df4[, c("popularity", "score_squareroot", "log_favorites", "rank")]))
+
+# Step 3: Fit a linear regression model to predict rank
+model <- lm(rank ~ popularity + score_squareroot + log_favorites, data = df_standardized)
+
+# Step 4: Summarize the regression results
+summary(model)
+
+# Step 5: Optional: Visualize the coefficients
+coefficients <- summary(model)$coefficients
+standardized_coeff <- coefficients[-1, 1]  # Remove the intercept
+
+# Create a dataframe for plotting
+coeff_df <- data.frame(
+  Variable = rownames(coefficients)[-1],  # Remove intercept
+  Standardized_Coefficient = standardized_coeff
+)
+```
+
+**Plot of standardized coefficients using Multiple linear regression**
+
+```{r Q1-Plot of standardized coefficients using Multiple linear regression}
+df4$score_squareroot <- sqrt(df4$score)
+
+df_standardized <- as.data.frame(scale(df4[, c("popularity", "score_squareroot", "log_scored_by", "log_favorites", "rank","log_members")]))
+
+model <- lm(rank ~ popularity + score_squareroot + log_scored_by + log_favorites +log_members , data = df_standardized)
+
+# summary(model)
+
+coefficients <- summary(model)$coefficients
+standardized_coeff <- coefficients[-1, 1]
+
+coeff_df <- data.frame(
+  Variable = rownames(coefficients)[-1],
+  Standardized_Coefficient = standardized_coeff
+)
+ggplot(coeff_df, aes(x = reorder(Variable, Standardized_Coefficient), y = Standardized_Coefficient)) +
+  geom_bar(stat = "identity", fill = "#FFA07A") +
+  geom_text(aes(label = round(Standardized_Coefficient, 3)), vjust = -0.5) +
+  coord_flip() +
+  labs(title = "Standardized Coefficients for Rank Prediction",
+       x = "Predictor Variables",
+       y = "Standardized Coefficient") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+        panel.grid = element_blank())
+```
+
+**Treemap based on score and popularity**
+
+```{r Q1-Treemap based on score and popularity}
+
+anime_table <- df4 %>%
+  group_by(name) %>%
+  summarise(score = max(score), popularity = max(popularity)) %>%
+  arrange(desc(score)) %>%            
+  slice_max(score, n = 20)            
+
+anime_table <- anime_table %>%
+  mutate(popularity = as.numeric(popularity))
+
+treemap(anime_table,
+        index = "name",                 
+        vSize = "score",               
+        vColor = "popularity",         
+        type = "value",                 
+        palette = "RdYlBu",             
+        fontsize.title = 14,
+        fontsize.labels = 10,           
+        title = "Top 20 Anime Treemap by Score and Popularity")
+
+```
+
+## Discussion
+
+In the scatterplot matrix, the relationships between the variables are depicted using both scatter plots and density plots, providing insight into how each variable relates to the others. A notable trend is the strong negative correlation between rank and score, indicating that as the score increases, the rank (where a lower rank is better) improves significantly. Additionally, there is a strong positive relationship between user engagement metrics like log_scored_by and log_favorites with the score, highlighting the influence of user interactions on anime ranking.The heatmap reveals further details on the correlation between the variables. The strong negative correlation between rank and popularity (-0.93) suggests that more popular anime tend to have better ranks.
+
+The regression analysis reveals that the model explains over 90% of the variance in the rank (R² = 0.904). The standardized coefficient plot shows that log_members has the largest influence on rank prediction, followed by popularity and score_squareroot, while log_scored_by and log_favorites have smaller but still significant effects on rank.
+
+The treemap shows the top 20 anime ranked by score and popularity, with Gintama and its various seasons prominently featured. Although many of these anime have similar high scores, their popularity varies widely. For instance, *Hunter x Hunter (2011)*, despite having a high score, shows significantly lower popularity compared to others. This discrepancy highlights that high quality does not always translate into widespread recognition or a large fan base, making popularity a more nuanced measure than score alone.
+
+# Question 2: What production related factors(studio,producers, source material) are associated with higher anime ratings and critical thinking?
+
+## Introduction
+
+The question focuses on identifying the production-related factors that influence higher anime ratings and critical reception. Key variables from the dataset that relate to production include studio, producers, source material, and ratings. These factors provide insights into how different production teams, types of content, and sources contribute to an anime's success. The continuous variables, score (representing critical reception) and popularity (indicating user engagement), will serve as outcome measures. Exploring these relationships can help reveal the influence of creative and production decisions on both ratings and audience engagement. This is particularly interesting as it allows us to understand how production elements contribute to an anime's success and long-term impact.
+
+## Approach:
+
+To explore these relationships, I’ve employed several visualization techniques. First, a scatter plot with top 20 studios (by count) is created, where score and popularity are plotted, with the size of points representing the studio's count of anime produced. This plots allow us to visualize how different studios perform both critically and in terms of user engagement.
+
+For categorical variables such as source and rating, line plots are employed to display mean score and popularity on separate y-axes, showing how these factors vary across different categories. Scatter plots are used for duration_category with score on the x-axis and popularity on the y-axis, to examine how length and number of episodes influence ratings. Additionally, bar plots depict mean scores and popularity for each episodes_category, providing a comprehensive look at the influence of these factors. Finally, a word cloud visualizes genre associations with mean popularity, offering an easy-to-understand summary of genre-based trends in critical reception and user engagement.
+
+## Analysis
+
+```{r dataset}
+
+df4 <- readr::read_csv("data/anime_cleaned_data.csv")
+```
+
+**Studio Bubbleplot**
+
+```{r Q2 Bubbleplot}
+studio_stats <- df4 %>%
+  group_by(studio) %>%
+  summarise(
+    anime_count = n(),
+    mean_score = mean(score, na.rm = TRUE),
+    mean_popularity = mean(popularity, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+top_20_studios <- studio_stats %>%
+  arrange(desc(anime_count)) %>%
+  head(20)
+
+### This is the first scatter plot
+
+ggplot(top_20_studios, aes(x = mean_popularity, y = mean_score)) +
+  geom_point(aes(size = anime_count, color = anime_count), alpha = 0.8, show.legend = TRUE) +
+  geom_text_repel(aes(label = studio), size = 3, max.overlaps = 20) +  
+  labs(title = "Mean Score vs Mean Popularity of Top 20 Studios",
+       x = "Mean Popularity",
+       y = "Mean Score",
+       size = "Anime Count",
+       color = "Anime Count") +
+  scale_size_continuous(range = c(3, 10)) + 
+  scale_color_gradient(low = "blue", high = "red") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1))
+
+```
+
+**Source**
+
+```{r source line chart}
+# Load necessary libraries
+
+#  Calculate mean and standard deviation for score and popularity by source
+df_summary <- df4 %>%
+  group_by(source) %>%
+  summarise(
+    mean_score = mean(score, na.rm = TRUE),
+    sd_score = sd(score, na.rm = TRUE),
+    mean_popularity = mean(popularity, na.rm = TRUE),
+    sd_popularity = sd(popularity, na.rm = TRUE)
+  )
+
+# Define a scaling factor to match the score and popularity ranges
+scale_factor <- max(df_summary$mean_popularity, na.rm = TRUE) / max(df_summary$mean_score, na.rm = TRUE)
+
+#  Create the plot with ggplot2
+ggplot(df_summary, aes(x = source)) +
+  
+  # Left y-axis: Line graph for mean_score with standard deviation as uncertainty (ribbon)
+  geom_line(aes(y = mean_score, group = 1), color = "blue") +
+  geom_ribbon(aes(ymin = mean_score - sd_score, ymax = mean_score + sd_score), fill = "blue", alpha = 0.2) +
+  geom_point(aes(y = mean_score), color = "blue", size = 3) +  # Add points for mean_score
+  
+  # Error bars for mean_score: Transparent and dotted
+  geom_errorbar(aes(ymin = mean_score - sd_score, ymax = mean_score + sd_score), 
+                width = 0.2, color = "blue", alpha = 0.6, linetype = "dotted") +
+  
+  # Right y-axis: Line graph for mean_popularity with standard deviation as uncertainty (ribbon)
+  geom_line(aes(y = mean_popularity / scale_factor, group = 1), color = "red") +  
+  geom_ribbon(aes(ymin = (mean_popularity - sd_popularity) / scale_factor, ymax = (mean_popularity + sd_popularity) / scale_factor), fill = "red", alpha = 0.5) +
+  geom_point(aes(y = mean_popularity / scale_factor), color = "red", size = 3) +  # Add points for mean_popularity
+  
+  # Error bars for mean_popularity: Transparent and dotted
+  geom_errorbar(aes(ymin = (mean_popularity - sd_popularity) / scale_factor, ymax = (mean_popularity + sd_popularity) / scale_factor), 
+                width = 0.2, color = "red", alpha = 0.6, linetype = "dotted") +
+  
+  # Add secondary y-axis for popularity
+  scale_y_continuous(
+    name = "Mean Score",  # Left y-axis label
+    limits = c(0, max(df_summary$mean_score + df_summary$sd_score, na.rm = TRUE)),  # Set limits for left y-axis
+    sec.axis = sec_axis(~ . * scale_factor, name = "Mean Popularity", breaks = seq(0, 16000, 4000))  # Right y-axis for popularity
+  ) +
+  
+  # Labels and title
+  labs(
+    title = "Mean Score and Mean Popularity by Source",
+    x = "Source",
+    y = "Mean Score"
+  ) +
+  
+  # Customize the theme
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1),  # Rotate x-axis labels for readability
+    
+    # Left y-axis (Mean Score) should be blue
+    axis.title.y.left = element_text(color = "blue", size = 11),
+    axis.text.y.left = element_text(color = "blue", size = 9),
+    
+    # Right y-axis (Mean Popularity) should be red
+    axis.title.y.right = element_text(color = "red", size = 11),
+    axis.text.y.right = element_text(color = "red", size = 9),
+    
+    # Center and bold the title
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    
+    panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1)  # Remove grid lines
+  )
+
+```
+
+**Rating**
+
+```{r rating line chart}
+# Calculate mean and standard deviation for score and popularity by rating
+df_summary <- df4 %>%
+  group_by(rating) %>%
+  summarise(
+    mean_score = mean(score, na.rm = TRUE),
+    sd_score = sd(score, na.rm = TRUE),
+    mean_popularity = mean(popularity, na.rm = TRUE),
+    sd_popularity = sd(popularity, na.rm = TRUE)
+  )
+
+# Define a scaling factor to match the score and popularity ranges
+scale_factor <- max(df_summary$mean_popularity, na.rm = TRUE) / max(df_summary$mean_score, na.rm = TRUE)
+
+# Create the plot with ggplot2 using rating instead of source
+ggplot(df_summary, aes(x = rating)) +
+  
+  # Left y-axis: Line graph for mean_score with standard deviation as uncertainty (ribbon)
+  geom_line(aes(y = mean_score, group = 1), color = "blue") +
+  geom_ribbon(aes(ymin = mean_score - sd_score, ymax = mean_score + sd_score), fill = "blue", alpha = 0.2) +
+  geom_point(aes(y = mean_score), color = "blue", size = 3) +  # Add points for mean_score
+  
+  # Error bars for mean_score: Transparent and dotted
+  geom_errorbar(aes(ymin = mean_score - sd_score, ymax = mean_score + sd_score), 
+                width = 0.2, color = "blue", alpha = 0.6, linetype = "dotted") +
+  
+  # Right y-axis: Line graph for mean_popularity with standard deviation as uncertainty (ribbon)
+  geom_line(aes(y = mean_popularity / scale_factor, group = 1), color = "red") +  
+  geom_ribbon(aes(ymin = (mean_popularity - sd_popularity) / scale_factor, ymax = (mean_popularity + sd_popularity) / scale_factor), fill = "red", alpha = 0.5) +
+  geom_point(aes(y = mean_popularity / scale_factor), color = "red", size = 3) +  # Add points for mean_popularity
+  
+  # Error bars for mean_popularity: Transparent and dotted
+  geom_errorbar(aes(ymin = (mean_popularity - sd_popularity) / scale_factor, ymax = (mean_popularity + sd_popularity) / scale_factor), 
+                width = 0.2, color = "red", alpha = 0.6, linetype = "dotted") +
+  
+  # Add secondary y-axis for popularity
+  scale_y_continuous(
+    name = "Mean Score",  # Left y-axis label
+    limits = c(0, max(df_summary$mean_score + df_summary$sd_score, na.rm = TRUE)),  # Set limits for left y-axis
+    sec.axis = sec_axis(~ . * scale_factor, name = "Mean Popularity", breaks = seq(0, 16000, 4000))  # Right y-axis for popularity
+  ) +
+  
+  # Labels and title
+  labs(
+    title = "Mean Score and Mean Popularity by Rating",
+    x = "Rating",
+    y = "Mean Score"
+  ) +
+  
+  # Customize the theme
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for readability
+    
+    # Left y-axis (Mean Score) should be blue
+    axis.title.y.left = element_text(color = "blue", size = 11),
+    axis.text.y.left = element_text(color = "blue", size = 9),
+    
+    # Right y-axis (Mean Popularity) should be red
+    axis.title.y.right = element_text(color = "red", size = 11),
+    axis.text.y.right = element_text(color = "red", size = 9),
+    
+    # Center and bold the title
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    
+    panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1)  # Remove grid lines
+  )
+
+
+```
+
+**Duration (Length) of episodes**
+
+Duration (Length) of episodes Scatterplot (Faceting)
+
+```{r scatterplot Duration (Length) of episodes }
+
+#making Categories of duration of episodes
+df4$duration_category <- cut(df4$duration_in_minutes,
+                             breaks = c(-Inf, 15, 30, Inf),
+                             labels = c("< 15 minutes", "15 to 30 minutes", "> 30 minutes"))
+
+
+
+ggplot(df4, aes(x = score, y = popularity, color = duration_category)) +
+  geom_point(size = 1.5, alpha = 0.6) +  # Add scatter points with smaller size and transparency
+  facet_wrap(~ duration_category) +      # Facet by duration_category
+  labs(
+    title = "Scatter Plot of Popularity vs Score Faceted by Duration Category",
+    x = "Score",
+    y = "Popularity"
+  ) +
+  scale_color_manual(values = c("< 15 minutes" = "orange", "15 to 30 minutes" = "green", "> 30 minutes" = "blue")) +  # Assign colors to categories
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),  # Center and bold the title
+    strip.text = element_text(size = 12),  # Increase facet label size
+    panel.grid = element_blank(),  # Remove grid lines
+    legend.position = "none",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1)  # Remove legend for colors
+  )
+
+```
+
+**No. of episodes category**
+
+Barplot of no. of episodes category based on score
+
+```{r barplot episodes category_score}
+
+df4$episodes_category <- cut(df4$episodes,
+                             breaks = c(-Inf, 100, 500, Inf),
+                             labels = c("< 100 episodes", "100-500 episodes", "> 500 episodes"))
+
+# Display the first few rows of the updated dataframe
+# head(df4[, c("episodes", "episodes_category")])
+
+df4_summary <- df4 %>%
+  group_by(episodes_category) %>%
+  summarise(mean_score = mean(score, na.rm = TRUE),
+            std_score = sd(score,na.rm = TRUE))
+df4_summary$score_minus_std <- df4_summary$mean_score - df4_summary$std_score
+df4_summary$score_plus_std <- df4_summary$mean_score + df4_summary$std_score
+
+# Create the bar plot
+ggplot(df4_summary, aes(x = episodes_category, y = mean_score, fill = episodes_category)) +
+  geom_bar(stat = "identity", color = "black") +
+  geom_errorbar(aes(ymin = score_minus_std,ymax = score_plus_std),width = 0.1,color = "black")+
+  scale_fill_manual(values = c('red', 'darkgreen', 'blue')) + # Shades of blue
+  labs(title = "Mean Score by Episodes Category", x = "Episodes Category", y = "Mean Score") +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold",hjust = 0.5),panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1))
+
+```
+
+**Barplot of no. of episodes category based on popularity**
+
+```{r episodes category_popularity}
+
+df4_summary <- df4 %>%
+  group_by(episodes_category) %>%
+  summarise(mean_popularity = mean(popularity, na.rm = TRUE),
+            std_popularity = sd(popularity,na.rm = TRUE))
+df4_summary$popularity_minus_std <- df4_summary$mean_popularity - df4_summary$std_popularity
+df4_summary$popularity_plus_std <- df4_summary$mean_popularity + df4_summary$std_popularity
+
+# Create the bar plot
+ggplot(df4_summary, aes(x = episodes_category, y = mean_popularity, fill = episodes_category)) +
+  geom_bar(stat = "identity", color = "black") +
+  geom_errorbar(aes(ymin = popularity_minus_std,ymax = popularity_plus_std),width = 0.2,color = "black")+
+  scale_fill_manual(values = c('red', 'darkgreen', 'blue')) + # Shades of blue
+  labs(title = "Mean Popularity by Episodes Category", x = "Episodes Category", y = "Mean Popularity") +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold",hjust = 0.5),panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1))
+
+```
+
+**Scatterplot of no. of episodes category**
+
+```{r episodes category scatterplot}
+
+ggplot(df4, aes(x = score, y = popularity, color = episodes_category)) +
+  geom_point(size = 1.5, alpha = 0.6) +  # Add scatter points with smaller size and transparency
+  facet_wrap(~ episodes_category) +      # Facet by episodes_category
+  labs(
+    title = "Scatter Plot of Popularity vs Score Faceted by Episodes Category",
+    x = "Score",
+    y = "Popularity"
+  ) +
+  scale_color_manual(values = c("< 100 episodes" = "red", "100-500 episodes" = "darkgreen", "> 500 episodes" = "blue")) +  # Assign colors to categories
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),  # Center and bold the title
+    strip.text = element_text(size = 12),  # Increase facet label size
+    panel.grid = element_blank(),  # Remove grid lines
+    legend.position = "none",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1)  # Remove legend for colors
+  )
+
+```
+
+**Genre**
+
+Word cloud of Anime genre based on Popularity
+
+```{r genre word cloud_popularity}
+
+unique_name_studio_df <- df4 %>%
+  distinct(name, genre, .keep_all = TRUE)
+
+genre_popularity <- unique_name_studio_df %>%
+  group_by(genre) %>%
+  summarise(mean_popularity = mean(popularity, na.rm = TRUE))
+
+# Generate the word cloud with genre as words and mean popularity as frequencies
+genre_popularity <- genre_popularity %>%
+  mutate(angle = 90 * sample(c(0, 1), n(), replace = TRUE, prob = c(60, 40)))
+# View(genre_scores)
+# View(genre_popularity)
+set.seed(43)
+ggplot(genre_popularity, aes(label = genre, size = mean_popularity, angle = angle,
+                             color = factor(sample.int(10, nrow(genre_popularity), replace = TRUE)))) +
+  geom_text_wordcloud(rm_overlap = TRUE, 
+                      padding = 2) +  # Add padding to further reduce overlap
+  scale_size_area(max_size = 12) +  # Slightly reduce max size to allow more space
+  labs(title = "Word Cloud of Genres Based on the Mean Popularity") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    text = element_text(size = 12),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1)
+  )
+
+```
+
+## Discussion
+
+The visualizations reveal key insights about the relationship between popularity and quality across anime studios, sources, and ratings. Notably, there is no strong correlation between popularity and scores, with some studios like *Shaft* and *Bones* achieving high scores despite moderate popularity, while others like *Toei Animation* and *Nippon Animation* show higher popularity but average scores. This trend is consistent with producers, where entities like *Aniplex* maintain strong scores with varying popularity, suggesting that high-quality production can appeal to a niche audience.
+
+Genre analysis reveals that anime such as *Music* and *Kids* are more popular but not necessarily rated as high. Ratings also play a role, with more general ratings like PG-13 attracting greater popularity, while R-rated content tends to receive lower scores.
+
+Duration and episode counts significantly influence ratings and popularity. Shorter episodes and series with fewer than 100 episodes generally achieve lower scores and have a wide range of popularity, while longer series (over 500 episodes) are more popular but often have lower average scores. The faceted scatter plots and genre word clouds further emphasize this divide, showing that while some genres and formats appeal to broad audiences, those with more intricate storytelling or niche appeal often achieve higher quality ratings from viewers.
+
+# **Q3. How do audience engagement metrics (e.g., number of members, favorites, and score) relate to the airing status and format of anime over time?**
+
+## Introduction
+
+The anime industry has experienced remarkable growth from a localized Japanese cultural product to a significant global entertainment phenomenon. This report investigates how various audience engagement metrics, such as the number of members, favorites, and scores, correlate with the airing status and format of anime. These metrics serve as indicators of anime's popularity and its evolution in terms of audience reception over time. Understanding these relationships can provide insights into broader trends in media consumption and the evolving preferences of global audiences.
+
+## Approach
+
+To explore the dynamics of audience engagement with anime, I plan to employ a range of statistical methods and data visualization techniques. The analysis will include:
+
+-   **Survival Analysis**: To assess how long different anime formats and statuses retain viewer interest.
+
+-   **Line Graphs**: To demonstrate trends in cumulative audience growth over time, using color mapping to distinguish between different anime formats.
+
+-   **Heatmaps**: To show the correlation between various metrics and anime characteristics, employing facets to represent different time periods or anime statuses.
+
+**Loading and Processing the dataset**
+
+```{r loading dataset}
+# Read the data
+data <- read.csv("data/anime_cleaned_data.csv")
+dim(data)
+# Convert date columns to Date format
+data$start_date <- as.Date(data$start_date, format = "%Y-%m-%d")
+data$end_date <- as.Date(data$end_date, format = "%Y-%m-%d")
+
+# Extract year from start_date
+data <- data %>%
+  mutate(only_year = year(start_date))
+```
+
+### Analysis
+
+**Genre Trends Over Time**
+
+```{r genre trends}
+# Genre Trends Over Time
+genre_trends <- data %>%
+  filter(!is.na(start_date)) %>%
+  mutate(year = year(start_date)) %>%
+  separate_rows(genre, sep = ", ") %>%
+  group_by(year, genre) %>%
+  summarise(count = n(), .groups = 'drop')
+
+# Plot stacked area of genre trends
+ggplot(genre_trends, aes(x = year, y = count, fill = genre)) +
+  geom_area() +
+  labs(title = "Anime Genre Trends Over Time", x = "Year", y = "Count")+
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+**Long-Term User Engagement**
+
+```{r long-term user engagement}
+
+# Long-Term User Engagement
+engagement <- data %>%
+  filter(!is.na(start_date)) %>%
+  mutate(
+    years_since_release = floor(as.numeric(difftime(Sys.Date(), start_date, units = "weeks")) / 52)
+  ) %>%
+  group_by(years_since_release) %>%
+  summarise(mean_popularity = mean(members, na.rm = TRUE), .groups = 'drop') %>%
+  arrange(years_since_release)
+
+# Plot engagement over time since release
+ggplot(engagement, aes(x = years_since_release, y = mean_popularity)) +
+  geom_line(color = "red",width = 5) +
+  labs(
+    title = "User Engagement Over Time Since Release",
+    x = "Years Since Release", y = "Mean Popularity"
+  )+
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+```
+
+**Survival Analysis of Anime Popularity**
+
+```{r survival analysis}
+# Survival Analysis of Anime Popularity
+surv_data <- data %>%
+  filter(!is.na(start_date) & !is.na(members)) %>%
+  mutate(
+    time = as.numeric(difftime(Sys.Date(), start_date, units = "weeks")) / 52,
+    event = ifelse(members > median(members, na.rm = TRUE), 1, 0)
+  )
+
+# Kaplan-Meier survival estimate
+surv_fit <- survfit(Surv(time, event) ~ 1, data = surv_data)
+
+# Plot survival analysis
+surv_plot <- ggsurvplot(
+    surv_fit,
+    title = "Survival Analysis of Anime Popularity",
+    xlab = "Years Since Release", ylab = "Popularity Retention"
+  )
+surv_plot$plot+
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+```
+
+**Impact of Airing Time**
+
+```{r impact of airing time}
+# Impact of Airing Time
+time_impact <- data %>%
+  filter(!is.na(premiered)) %>%
+  mutate(
+    season = word(premiered, 1),        # Extract season (first word)
+    year = as.numeric(word(premiered, 2))  # Extract year (second word)
+  ) %>%
+  group_by(season, year) %>%
+  summarise(mean_score = mean(score, na.rm = TRUE), .groups = "drop")
+
+# Plot heatmap of airing time impact on score
+ggplot(time_impact, aes(x = year, y = season, fill = mean_score)) +
+  geom_tile() +
+  scale_fill_gradient(low = "blue", high = "red") +
+  labs(
+    title = "Impact of Season and Year on Anime Score",
+    x = "Year", y = "Season"
+  ) +
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+```
+
+## Discussion
+
+The visualizations analyze anime popularity and release trends over time. The first chart shows a decline in user engagement with older anime, indicating that initial high popularity often decreases as time passes, with occasional spikes likely due to notable series.
+
+The second chart illustrates a survival analysis of anime popularity, showing a sharp decline within the first few decades. The third plot reveals how different seasons affect anime scores across years, while the last chart highlights the rise and diversification of anime genres, particularly after 2000, reflecting anime's growth as an entertainment medium.
+
+## Arigato!!
