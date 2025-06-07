@@ -1,10 +1,9 @@
 ---
 title: "Popularity of Anime"
-subtitle: "INFO 526 - Fall 2024 - Project 01"
+
 author: 
   - name: "Data Wizards"
-    affiliations:
-      - name: "School of Information, University of Arizona"
+    
 description: "Project description"
 format:
    html:
@@ -644,137 +643,7 @@ Genre analysis reveals that anime such as *Music* and *Kids* are more popular bu
 
 Duration and episode counts significantly influence ratings and popularity. Shorter episodes and series with fewer than 100 episodes generally achieve lower scores and have a wide range of popularity, while longer series (over 500 episodes) are more popular but often have lower average scores. The faceted scatter plots and genre word clouds further emphasize this divide, showing that while some genres and formats appeal to broad audiences, those with more intricate storytelling or niche appeal often achieve higher quality ratings from viewers.
 
-# **Q3. How do audience engagement metrics (e.g., number of members, favorites, and score) relate to the airing status and format of anime over time?**
 
-## Introduction
 
-The anime industry has experienced remarkable growth from a localized Japanese cultural product to a significant global entertainment phenomenon. This report investigates how various audience engagement metrics, such as the number of members, favorites, and scores, correlate with the airing status and format of anime. These metrics serve as indicators of anime's popularity and its evolution in terms of audience reception over time. Understanding these relationships can provide insights into broader trends in media consumption and the evolving preferences of global audiences.
-
-## Approach
-
-To explore the dynamics of audience engagement with anime, I plan to employ a range of statistical methods and data visualization techniques. The analysis will include:
-
--   **Survival Analysis**: To assess how long different anime formats and statuses retain viewer interest.
-
--   **Line Graphs**: To demonstrate trends in cumulative audience growth over time, using color mapping to distinguish between different anime formats.
-
--   **Heatmaps**: To show the correlation between various metrics and anime characteristics, employing facets to represent different time periods or anime statuses.
-
-**Loading and Processing the dataset**
-
-```{r loading dataset}
-# Read the data
-data <- read.csv("data/anime_cleaned_data.csv")
-dim(data)
-# Convert date columns to Date format
-data$start_date <- as.Date(data$start_date, format = "%Y-%m-%d")
-data$end_date <- as.Date(data$end_date, format = "%Y-%m-%d")
-
-# Extract year from start_date
-data <- data %>%
-  mutate(only_year = year(start_date))
-```
-
-### Analysis
-
-**Genre Trends Over Time**
-
-```{r genre trends}
-# Genre Trends Over Time
-genre_trends <- data %>%
-  filter(!is.na(start_date)) %>%
-  mutate(year = year(start_date)) %>%
-  separate_rows(genre, sep = ", ") %>%
-  group_by(year, genre) %>%
-  summarise(count = n(), .groups = 'drop')
-
-# Plot stacked area of genre trends
-ggplot(genre_trends, aes(x = year, y = count, fill = genre)) +
-  geom_area() +
-  labs(title = "Anime Genre Trends Over Time", x = "Year", y = "Count")+
-  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
-```
-
-**Long-Term User Engagement**
-
-```{r long-term user engagement}
-
-# Long-Term User Engagement
-engagement <- data %>%
-  filter(!is.na(start_date)) %>%
-  mutate(
-    years_since_release = floor(as.numeric(difftime(Sys.Date(), start_date, units = "weeks")) / 52)
-  ) %>%
-  group_by(years_since_release) %>%
-  summarise(mean_popularity = mean(members, na.rm = TRUE), .groups = 'drop') %>%
-  arrange(years_since_release)
-
-# Plot engagement over time since release
-ggplot(engagement, aes(x = years_since_release, y = mean_popularity)) +
-  geom_line(color = "red",width = 5) +
-  labs(
-    title = "User Engagement Over Time Since Release",
-    x = "Years Since Release", y = "Mean Popularity"
-  )+
-  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
-
-```
-
-**Survival Analysis of Anime Popularity**
-
-```{r survival analysis}
-# Survival Analysis of Anime Popularity
-surv_data <- data %>%
-  filter(!is.na(start_date) & !is.na(members)) %>%
-  mutate(
-    time = as.numeric(difftime(Sys.Date(), start_date, units = "weeks")) / 52,
-    event = ifelse(members > median(members, na.rm = TRUE), 1, 0)
-  )
-
-# Kaplan-Meier survival estimate
-surv_fit <- survfit(Surv(time, event) ~ 1, data = surv_data)
-
-# Plot survival analysis
-surv_plot <- ggsurvplot(
-    surv_fit,
-    title = "Survival Analysis of Anime Popularity",
-    xlab = "Years Since Release", ylab = "Popularity Retention"
-  )
-surv_plot$plot+
-  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
-
-```
-
-**Impact of Airing Time**
-
-```{r impact of airing time}
-# Impact of Airing Time
-time_impact <- data %>%
-  filter(!is.na(premiered)) %>%
-  mutate(
-    season = word(premiered, 1),        # Extract season (first word)
-    year = as.numeric(word(premiered, 2))  # Extract year (second word)
-  ) %>%
-  group_by(season, year) %>%
-  summarise(mean_score = mean(score, na.rm = TRUE), .groups = "drop")
-
-# Plot heatmap of airing time impact on score
-ggplot(time_impact, aes(x = year, y = season, fill = mean_score)) +
-  geom_tile() +
-  scale_fill_gradient(low = "blue", high = "red") +
-  labs(
-    title = "Impact of Season and Year on Anime Score",
-    x = "Year", y = "Season"
-  ) +
-  theme_minimal()+
-  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
-
-```
-
-## Discussion
-
-The visualizations analyze anime popularity and release trends over time. The first chart shows a decline in user engagement with older anime, indicating that initial high popularity often decreases as time passes, with occasional spikes likely due to notable series.
-
-The second chart illustrates a survival analysis of anime popularity, showing a sharp decline within the first few decades. The third plot reveals how different seasons affect anime scores across years, while the last chart highlights the rise and diversification of anime genres, particularly after 2000, reflecting anime's growth as an entertainment medium.
 
 ## Arigato!!
